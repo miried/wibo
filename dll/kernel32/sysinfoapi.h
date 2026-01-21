@@ -66,6 +66,19 @@ struct OSVERSIONINFOEXW : OSVERSIONINFOW {
 
 using LPOSVERSIONINFOEXW = OSVERSIONINFOEXW *;
 
+struct MEMORYSTATUS {
+	DWORD dwLength;
+	DWORD dwMemoryLoad;
+	SIZE_T dwTotalPhys;
+	SIZE_T dwAvailPhys;
+	SIZE_T dwTotalPageFile;
+	SIZE_T dwAvailPageFile;
+	SIZE_T dwTotalVirtual;
+	SIZE_T dwAvailVirtual;
+};
+
+using LPMEMORYSTATUS = MEMORYSTATUS *;
+
 namespace kernel32 {
 
 void WINAPI GetSystemInfo(LPSYSTEM_INFO lpSystemInfo);
@@ -76,5 +89,6 @@ DWORD WINAPI GetTickCount();
 DWORD WINAPI GetVersion();
 BOOL WINAPI GetVersionExA(LPOSVERSIONINFOA lpVersionInformation);
 BOOL WINAPI GetVersionExW(LPOSVERSIONINFOW lpVersionInformation);
+void WINAPI GlobalMemoryStatus(LPMEMORYSTATUS lpBuffer);
 
 } // namespace kernel32
