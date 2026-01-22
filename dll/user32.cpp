@@ -175,6 +175,14 @@ HWND WINAPI GetActiveWindow() {
 	return NO_HANDLE;
 }
 
+BOOL WINAPI EnumThreadWindows(DWORD dwThreadId, WNDENUMPROC lpfn, LPARAM lParam) {
+	HOST_CONTEXT_GUARD();
+	DEBUG_LOG("STUB: EnumThreadWindows(%u, %p, %p)\n", dwThreadId, lpfn, lParam);
+	(void)dwThreadId;
+	(void)lParam;
+	return FALSE;
+}
+
 } // namespace user32
 
 #include "user32_trampolines.h"
