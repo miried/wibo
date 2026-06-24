@@ -38,6 +38,9 @@ extern const wibo::ModuleStub lib_msvcrt;
 #if WIBO_HAS_MSVCRT40
 extern const wibo::ModuleStub lib_msvcrt40;
 #endif
+#if WIBO_HAS_MSVCIRT
+extern const wibo::ModuleStub lib_msvcirt;
+#endif
 #if WIBO_HAS_MSVCR71
 extern const wibo::ModuleStub lib_msvcr71;
 #endif
@@ -214,6 +217,9 @@ LockedRegistry registry() {
 #endif
 #if WIBO_HAS_MSVCRT40
 			&lib_msvcrt40,
+#endif
+#if WIBO_HAS_MSVCIRT
+			&lib_msvcirt,
 #endif
 #if WIBO_HAS_MSVCR71
 			&lib_msvcr71,
