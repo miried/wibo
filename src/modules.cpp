@@ -35,6 +35,9 @@ extern const wibo::ModuleStub lib_mscoree;
 #if WIBO_HAS_MSVCRT
 extern const wibo::ModuleStub lib_msvcrt;
 #endif
+#if WIBO_HAS_MSVCRT40
+extern const wibo::ModuleStub lib_msvcrt40;
+#endif
 #if WIBO_HAS_MSVCR71
 extern const wibo::ModuleStub lib_msvcr71;
 #endif
@@ -208,6 +211,9 @@ LockedRegistry registry() {
 			&lib_ws2,
 #if WIBO_HAS_MSVCRT
 			&lib_msvcrt,
+#endif
+#if WIBO_HAS_MSVCRT40
+			&lib_msvcrt40,
 #endif
 #if WIBO_HAS_MSVCR71
 			&lib_msvcr71,

@@ -52,7 +52,7 @@ endif()
 
 option(WIBO_ENABLE_FIXTURE_TESTS "Enable Win32 fixture tests (requires i686-w64-mingw32)" ON)
 option(WIBO_ENABLE_LIBURING "Enable liburing for asynchronous I/O" OFF)
-option(WIBO_ENABLE_WINE_DLLS "Download Wine CRT DLLs from encounter/winedll by default" ON)
+option(WIBO_ENABLE_WINE_DLLS "Download Wine CRT DLLs from miried/winedll by default" ON)
 set(WIBO_ENABLE_LTO "AUTO" CACHE STRING "Enable link-time optimization (LTO)")
 set_property(CACHE WIBO_ENABLE_LTO PROPERTY STRINGS "AUTO" "ON" "OFF")
 
@@ -140,7 +140,7 @@ if (WIBO_ENABLE_LIBURING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(liburing PRIVATE ${liburing_SOURCE_DIR})
 endif()
 
-set(WIBO_WINEDLL_RELEASE_TAG "2026-03-04")
+set(WIBO_WINEDLL_RELEASE_TAG "2026-06-24")
 
 function(configure_wine_dll VAR FILENAME SHA256)
     if (NOT DEFINED ${VAR})
@@ -148,7 +148,7 @@ function(configure_wine_dll VAR FILENAME SHA256)
             file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/vendor)
             set(${VAR} ${CMAKE_CURRENT_BINARY_DIR}/vendor/${FILENAME})
             file(DOWNLOAD
-                https://github.com/encounter/winedll/releases/download/${WIBO_WINEDLL_RELEASE_TAG}/${FILENAME}
+                https://github.com/miried/winedll/releases/download/${WIBO_WINEDLL_RELEASE_TAG}/${FILENAME}
                 ${${VAR}}
                 EXPECTED_HASH SHA256=${SHA256}
             )
@@ -159,12 +159,13 @@ function(configure_wine_dll VAR FILENAME SHA256)
     set(${VAR} "${${VAR}}" PARENT_SCOPE)
 endfunction()
 
-configure_wine_dll(MSVCRT_DLL msvcrt.dll 1d44b9d04133629fa76057b7235ba4fb288204c0da447e4e1624d66251cd611d)
-configure_wine_dll(MSVCR71_DLL msvcr71.dll da554a689d54b3047f163aca817bf934ca292458d1158b0dcbeeafb531512f13)
-configure_wine_dll(MSVCR90_DLL msvcr90.dll 01524a7a8b8982ab20f7296630f1f504e317b776c019897634e20d4216890c1b)
-configure_wine_dll(MSVCR100_DLL msvcr100.dll 559adc19f18c241cfdbd79c241c1247d1457478230f64159d63535aed730d0c4)
-configure_wine_dll(MSVCR120_DLL msvcr120.dll 38e47d62582a7bcf7e90b75dbe0c4219e2dde11e228865ff2c1a4defd737c113)
-configure_wine_dll(UCRTBASE_DLL ucrtbase.dll 7321cfb3df9846d11ab7533d0d2ef8aa9e61a6a81a68e48362739fd675e14c5b)
+configure_wine_dll(MSVCRT_DLL msvcrt.dll 014e5f611750765b9d7901172020586b53f9900d325c5061d557bff852bc36cc)
+configure_wine_dll(MSVCRT40_DLL msvcrt40.dll 4e57c220939935e3d30029f8bf9054bd5d41dfdae98df7619bb04fedf08d2604)
+configure_wine_dll(MSVCR71_DLL msvcr71.dll ec41c56c4636c410d08cb514b7fae7911b9a59d0c99ff02dd4cecd5026513e03)
+configure_wine_dll(MSVCR90_DLL msvcr90.dll e15df75e69b0ba4d578ab1bb552de4c597831d75b275752a4c908531be7c1deb)
+configure_wine_dll(MSVCR100_DLL msvcr100.dll 878d9367f50ed7ebe19881492a51dc024789404ce88bbcd0f6830421db71e745)
+configure_wine_dll(MSVCR120_DLL msvcr120.dll a67baa040beac3972084c4aedeb8c7c6b444861acea73ae28581bcbb1bcd7330)
+configure_wine_dll(UCRTBASE_DLL ucrtbase.dll 28479380a0ba73b414c66617f1d13ab4af892c90bfeb6aa435ab4a8089cb7b3f)
 
 function(embed_binary SRC FILE)
     set_source_files_properties(${SRC} PROPERTIES
@@ -242,6 +243,7 @@ add_executable(wibo
     src/tls.cpp
 )
 add_embedded_wine_dll(wibo dll/msvcrt.cpp WIBO_HAS_MSVCRT "${MSVCRT_DLL}")
+add_embedded_wine_dll(wibo dll/msvcrt40.cpp WIBO_HAS_MSVCRT40 "${MSVCRT40_DLL}")
 add_embedded_wine_dll(wibo dll/msvcr71.cpp WIBO_HAS_MSVCR71 "${MSVCR71_DLL}")
 add_embedded_wine_dll(wibo dll/msvcr90.cpp WIBO_HAS_MSVCR90 "${MSVCR90_DLL}")
 add_embedded_wine_dll(wibo dll/msvcr100.cpp WIBO_HAS_MSVCR100 "${MSVCR100_DLL}")
