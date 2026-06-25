@@ -1423,6 +1423,13 @@ static void *resolveForwardedExport(const std::string &forward) {
 	std::string targetFunc = forward.substr(dot + 1);
 	DEBUG_LOG("resolveForwardedExport: %s -> %s.%s\n", forward.c_str(), targetDll.c_str(), targetFunc.c_str());
 	ModuleInfo *target = loadModule(targetDll.c_str());
+	if (!target && targetDll.size() > 1 && targetDll[0] == '_') {
+		// Wine's PE builds emit forwarders to the implementation DLL with a leading
+		// underscore (e.g. "_msvcrt.malloc" -> msvcrt, "_kernel32.foo" -> kernel32).
+		// No real module name begins with an underscore, so retry without it.
+		DEBUG_LOG("  retrying forwarder target without leading underscore: %s\n", targetDll.c_str() + 1);
+		target = loadModule(targetDll.c_str() + 1);
+	}
 	if (!target) {
 		DEBUG_LOG("  forwarder target module %s not found\n", targetDll.c_str());
 		return nullptr;
