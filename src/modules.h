@@ -105,6 +105,9 @@ struct ModuleInfo {
 	uint32_t exportOrdinalBase = 0;
 	std::vector<void *> exportsByOrdinal;
 	std::unordered_map<std::string, uint16_t> exportNameToOrdinal;
+	// Forwarded exports (e.g. "msvcirt.??_G..."), keyed by export function index.
+	// Resolved lazily on first lookup so we don't eagerly load every forwarded module.
+	std::unordered_map<uint32_t, std::string> exportForwarders;
 	bool exportsInitialized = false;
 	ModuleTlsInfo tlsInfo;
 };

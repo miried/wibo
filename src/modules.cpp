@@ -755,9 +755,12 @@ void ensureExportsInitialized(wibo::ModuleInfo &info) {
 				continue;
 			}
 			if (rva >= exe->exportDirectoryRVA && rva < exe->exportDirectoryRVA + exe->exportDirectorySize) {
+				// Forwarded export (e.g. "msvcirt.??_G..."). Record the target string and
+				// resolve it lazily on first lookup; resolving eagerly here would load every
+				// forwarded module up front and (for DLLs like msvcrt40 with >1000 forwarders)
+				// exhaust the missing-function stub table.
 				const char *forward = exe->fromRVA<const char>(rva);
-				info.exportsByOrdinal[i] =
-					reinterpret_cast<void *>(resolveMissingFuncName(info.originalName.c_str(), forward));
+				info.exportForwarders[i] = forward;
 			} else {
 				info.exportsByOrdinal[i] = exe->fromRVA<void>(rva);
 			}
@@ -1409,6 +1412,31 @@ void freeModule(ModuleInfo *info) {
 	}
 }
 
+static void *resolveForwardedExport(const std::string &forward) {
+	// Forwarder strings have the form "DllName.FunctionName" or "DllName.#Ordinal".
+	// The DLL name carries no extension and never contains a dot, so split on the first one.
+	auto dot = forward.find('.');
+	if (dot == std::string::npos || dot == 0 || dot + 1 >= forward.size()) {
+		return nullptr;
+	}
+	std::string targetDll = forward.substr(0, dot);
+	std::string targetFunc = forward.substr(dot + 1);
+	DEBUG_LOG("resolveForwardedExport: %s -> %s.%s\n", forward.c_str(), targetDll.c_str(), targetFunc.c_str());
+	ModuleInfo *target = loadModule(targetDll.c_str());
+	if (!target) {
+		DEBUG_LOG("  forwarder target module %s not found\n", targetDll.c_str());
+		return nullptr;
+	}
+	if (targetFunc[0] == '#') {
+		long ordinal = strtol(targetFunc.c_str() + 1, nullptr, 10);
+		if (ordinal <= 0 || ordinal > 0xFFFF) {
+			return nullptr;
+		}
+		return resolveFuncByOrdinal(target, static_cast<uint16_t>(ordinal));
+	}
+	return resolveFuncByName(target, targetFunc.c_str());
+}
+
 void *resolveFuncByName(ModuleInfo *info, const char *funcName) {
 	if (!info) {
 		return nullptr;
@@ -1447,6 +1475,17 @@ void *resolveFuncByOrdinal(ModuleInfo *info, uint16_t ordinal) {
 			void *addr = info->exportsByOrdinal[index];
 			if (addr) {
 				return addr;
+			}
+			auto fwdIt = info->exportForwarders.find(static_cast<uint32_t>(index));
+			if (fwdIt != info->exportForwarders.end()) {
+				if (void *resolved = resolveForwardedExport(fwdIt->second)) {
+					info->exportsByOrdinal[index] = resolved; // cache resolved target
+					return resolved;
+				}
+				// Could not resolve the forwarder target; fall back to a stub so a call
+				// to it produces a clear error instead of silently failing.
+				return reinterpret_cast<void *>(
+					resolveMissingFuncName(info->originalName.c_str(), fwdIt->second.c_str()));
 			}
 		}
 	}
