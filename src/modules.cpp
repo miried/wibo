@@ -1155,23 +1155,29 @@ void releaseModuleTls(ModuleInfo &module) {
 
 void notifyDllThreadAttach() {
 	auto reg = registry();
-	std::vector<wibo::ModuleInfo *> targets;
-	targets.reserve(reg->modulesByKey.size());
+	std::vector<wibo::ModuleInfo *> tlsTargets;
+	std::vector<wibo::ModuleInfo *> notificationTargets;
+	tlsTargets.reserve(reg->modulesByKey.size());
+	notificationTargets.reserve(reg->modulesByKey.size());
 	for (auto &pair : reg->modulesByKey) {
 		wibo::ModuleInfo *info = pair.second.get();
-		if (info && shouldDeliverThreadNotifications(*info)) {
-			targets.push_back(info);
+		if (!info) {
+			continue;
+		}
+		if (info->tlsInfo.hasTls) {
+			tlsTargets.push_back(info);
+		}
+		if (shouldDeliverThreadNotifications(*info)) {
+			notificationTargets.push_back(info);
 		}
 	}
-	for (wibo::ModuleInfo *info : targets) {
-		if (info && info->tlsInfo.hasTls) {
-			if (!allocateModuleTlsForThread(*info, currentThreadTeb)) {
-				DEBUG_LOG("notifyDllThreadAttach: failed to allocate TLS for %s\n", info->originalName.c_str());
-			}
-			runModuleTlsCallbacks(*info, TLS_THREAD_ATTACH);
+	for (wibo::ModuleInfo *info : tlsTargets) {
+		if (!allocateModuleTlsForThread(*info, currentThreadTeb)) {
+			DEBUG_LOG("notifyDllThreadAttach: failed to allocate TLS for %s\n", info->originalName.c_str());
 		}
+		runModuleTlsCallbacks(*info, TLS_THREAD_ATTACH);
 	}
-	for (wibo::ModuleInfo *info : targets) {
+	for (wibo::ModuleInfo *info : notificationTargets) {
 		callDllMain(*info, DLL_THREAD_ATTACH, nullptr);
 	}
 	kernel32::setLastError(ERROR_SUCCESS);
@@ -1179,26 +1185,30 @@ void notifyDllThreadAttach() {
 
 void notifyDllThreadDetach() {
 	auto reg = registry();
-	std::vector<wibo::ModuleInfo *> targets;
-	targets.reserve(reg->modulesByKey.size());
+	std::vector<wibo::ModuleInfo *> tlsTargets;
+	std::vector<wibo::ModuleInfo *> notificationTargets;
+	tlsTargets.reserve(reg->modulesByKey.size());
+	notificationTargets.reserve(reg->modulesByKey.size());
 	for (auto &pair : reg->modulesByKey) {
 		wibo::ModuleInfo *info = pair.second.get();
-		if (info && shouldDeliverThreadNotifications(*info)) {
-			targets.push_back(info);
+		if (!info) {
+			continue;
+		}
+		if (info->tlsInfo.hasTls) {
+			tlsTargets.push_back(info);
+		}
+		if (shouldDeliverThreadNotifications(*info)) {
+			notificationTargets.push_back(info);
 		}
 	}
-	for (auto it = targets.rbegin(); it != targets.rend(); ++it) {
-		if (*it && (*it)->tlsInfo.hasTls) {
-			runModuleTlsCallbacks(**it, TLS_THREAD_DETACH);
-		}
+	for (auto it = tlsTargets.rbegin(); it != tlsTargets.rend(); ++it) {
+		runModuleTlsCallbacks(**it, TLS_THREAD_DETACH);
 	}
-	for (auto it = targets.rbegin(); it != targets.rend(); ++it) {
+	for (auto it = notificationTargets.rbegin(); it != notificationTargets.rend(); ++it) {
 		callDllMain(**it, DLL_THREAD_DETACH, nullptr);
 	}
-	for (auto it = targets.rbegin(); it != targets.rend(); ++it) {
-		if (*it && (*it)->tlsInfo.hasTls) {
-			freeModuleTlsForThread(**it, currentThreadTeb);
-		}
+	for (auto it = tlsTargets.rbegin(); it != tlsTargets.rend(); ++it) {
+		freeModuleTlsForThread(**it, currentThreadTeb);
 	}
 	kernel32::setLastError(ERROR_SUCCESS);
 }
