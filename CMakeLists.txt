@@ -140,7 +140,7 @@ if (WIBO_ENABLE_LIBURING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(liburing PRIVATE ${liburing_SOURCE_DIR})
 endif()
 
-set(WIBO_WINEDLL_RELEASE_TAG "2026-07-02")
+set(WIBO_WINEDLL_RELEASE_TAG "2026-07-03")
 
 function(configure_wine_dll VAR FILENAME SHA256)
     if (NOT DEFINED ${VAR})
@@ -148,7 +148,7 @@ function(configure_wine_dll VAR FILENAME SHA256)
             file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/vendor)
             set(${VAR} ${CMAKE_CURRENT_BINARY_DIR}/vendor/${FILENAME})
             file(DOWNLOAD
-                https://github.com/encounter/winedll/releases/download/${WIBO_WINEDLL_RELEASE_TAG}/${FILENAME}
+                https://github.com/miried/winedll/releases/download/${WIBO_WINEDLL_RELEASE_TAG}/${FILENAME}
                 ${${VAR}}
                 EXPECTED_HASH SHA256=${SHA256}
             )
@@ -159,14 +159,15 @@ function(configure_wine_dll VAR FILENAME SHA256)
     set(${VAR} "${${VAR}}" PARENT_SCOPE)
 endfunction()
 
-configure_wine_dll(MSVCRT_DLL msvcrt.dll 8f27333e1712003465325f5d5c2d315a72ccee556cab756e74c3fc946e0d3923)
-configure_wine_dll(MSVCIRT_DLL msvcirt.dll 074d40319b2a55aca3bf166c8c0774ab68432f55cd94b269b68916c20bea3361)
-configure_wine_dll(MSVCRT40_DLL msvcrt40.dll b27b97a8258f5dbeef4c69c4107528bc1c9bb2a0a28f628564aa1b9a0063c51a)
-configure_wine_dll(MSVCR71_DLL msvcr71.dll f38a37593eb14479e53c53d786c51c3f6d7116fb88f7e442448abc5ed0bc9156)
-configure_wine_dll(MSVCR90_DLL msvcr90.dll 25956b77e0a5f7c50b467ee6ef62e2ad05341e9142b2d7017090610b04cf74a9)
-configure_wine_dll(MSVCR100_DLL msvcr100.dll 84a04a0186c0ce28a5852bca189a28234e6e949a67c5cd1439eeff3abb3d7413)
-configure_wine_dll(MSVCR120_DLL msvcr120.dll fbc792415bdca06e7bc1cb62f656c7777e70bd0a8e1d1ef7387ca29467ea1321)
-configure_wine_dll(UCRTBASE_DLL ucrtbase.dll 5e57a03f12d4d3675e76a8cabebfcba1bb0affed0ad11a2ce63688b5e059f324)
+configure_wine_dll(MSVCRT_DLL msvcrt.dll 2c599373baa1a807476941b06309b7a3ffb9c417945d04f4d87f42012e3d6402)
+configure_wine_dll(MSVCIRT_DLL msvcirt.dll ba296acf7b4fcd33c42661b3fefcb757fb7c98987fcb58a195dd9777a7ac195f)
+configure_wine_dll(MSVCRT20_DLL msvcrt20.dll 937a35ae755eba4bfb7d8d6417330331cf2afeda9ad88c3a07f3229c0a572f8d)
+configure_wine_dll(MSVCRT40_DLL msvcrt40.dll 17627c983034b361542e72572c078af707e41da77623164b10a907aae13b32c2)
+configure_wine_dll(MSVCR71_DLL msvcr71.dll 6410ef4daf54da17741a828b261defa01a0363daed01a7af26cbcac75b1b1810)
+configure_wine_dll(MSVCR90_DLL msvcr90.dll 225f91adf35261ab198bd859f241c3276027a2cc71aba59c8073baa3f07131ec)
+configure_wine_dll(MSVCR100_DLL msvcr100.dll abae2921fe18ef6a37173f436fe1c5ef32a752bc5f6f635b847bc142154e59e1)
+configure_wine_dll(MSVCR120_DLL msvcr120.dll 00e99c8b3f1ffb1e3e3d1ec39f8828c23c3e86c0585fbec6be721b6158df9b02)
+configure_wine_dll(UCRTBASE_DLL ucrtbase.dll 9032d8ae13caa300bde9c22b6c33b0ef49fe84ebf556fbb5f8e9148a902bb5f7)
 
 function(embed_binary SRC FILE)
     set_source_files_properties(${SRC} PROPERTIES
@@ -245,6 +246,7 @@ add_executable(wibo
 )
 add_embedded_wine_dll(wibo dll/msvcrt.cpp WIBO_HAS_MSVCRT "${MSVCRT_DLL}")
 add_embedded_wine_dll(wibo dll/msvcirt.cpp WIBO_HAS_MSVCIRT "${MSVCIRT_DLL}")
+add_embedded_wine_dll(wibo dll/msvcrt20.cpp WIBO_HAS_MSVCRT20 "${MSVCRT20_DLL}")
 add_embedded_wine_dll(wibo dll/msvcrt40.cpp WIBO_HAS_MSVCRT40 "${MSVCRT40_DLL}")
 add_embedded_wine_dll(wibo dll/msvcr71.cpp WIBO_HAS_MSVCR71 "${MSVCR71_DLL}")
 add_embedded_wine_dll(wibo dll/msvcr90.cpp WIBO_HAS_MSVCR90 "${MSVCR90_DLL}")
