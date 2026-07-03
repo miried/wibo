@@ -213,6 +213,34 @@ bool ensureModuleArrayCapacityLocked(size_t required) {
 	return true;
 }
 
+// Guarantees that `tib` owns a module TLS array sized to the current global
+// capacity and that its ThreadLocalStoragePointer points at it. A tib that
+// joins g_activeTibs after the last capacity growth would otherwise have no
+// module array at all, because ensureModuleArrayCapacityLocked only (re)allocates
+// arrays while the global capacity is growing. Returns the array, or nullptr on
+// allocation failure (or when there is no module capacity yet).
+TlsArray *ensureModuleArrayForTibLocked(TEB *tib) {
+	if (!tib || g_moduleArrayCapacity == 0) {
+		return nullptr;
+	}
+	auto *array = getModuleArray(tib);
+	if (array && array->capacity >= g_moduleArrayCapacity) {
+		tib->ThreadLocalStoragePointer = toGuestPtr(array->slots);
+		return array;
+	}
+	auto *newArray = allocateTlsArray(g_moduleArrayCapacity);
+	if (!newArray) {
+		return nullptr;
+	}
+	if (array) {
+		std::copy_n(array->slots, std::min(array->capacity, newArray->capacity), newArray->slots);
+		queueOldModuleArray(tib, array);
+	}
+	g_moduleArrays[tib] = newArray;
+	tib->ThreadLocalStoragePointer = toGuestPtr(newArray->slots);
+	return newArray;
+}
+
 void zeroSlotForAllTibs(size_t index) {
 	if (index < kTlsSlotCount) {
 		for (TEB *tib : g_activeTibs) {
@@ -248,10 +276,8 @@ void initializeTib(TEB *tib) {
 			setExpansionArray(tib, arr);
 		}
 	}
-	if (g_moduleArrayCapacity > 0) {
-		if (!ensureModuleArrayCapacityLocked(g_moduleArrayCapacity)) {
-			DEBUG_LOG("initializeTib: failed to allocate module TLS array for %p\n", tib);
-		}
+	if (g_moduleArrayCapacity > 0 && !ensureModuleArrayForTibLocked(tib)) {
+		DEBUG_LOG("initializeTib: failed to allocate module TLS array for %p\n", tib);
 	}
 }
 
@@ -391,6 +417,11 @@ bool setModulePointer(TEB *tib, size_t index, GUEST_PTR value) {
 		return false;
 	}
 	auto *array = getModuleArray(tib);
+	if (!array || array->capacity < g_moduleArrayCapacity) {
+		// A tib that joined after the last capacity growth may have no array yet
+		// (or a stale, undersized one); allocate/grow it on demand.
+		array = ensureModuleArrayForTibLocked(tib);
+	}
 	if (!array || index >= array->capacity) {
 		return false;
 	}
