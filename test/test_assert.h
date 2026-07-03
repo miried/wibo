@@ -1,6 +1,7 @@
 #ifndef WIBO_TEST_ASSERT_H
 #define WIBO_TEST_ASSERT_H
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,8 +28,8 @@
 
 #define TEST_CHECK_EQ(expected, actual) \
     do { \
-        long long _expected_value = (long long)(expected); \
-        long long _actual_value = (long long)(actual); \
+        long long _expected_value = (long long)(intptr_t)(expected); \
+        long long _actual_value = (long long)(intptr_t)(actual); \
         if (_expected_value != _actual_value) { \
             TEST_FAIL("Expected %s (%lld) == %s (%lld)", \
                       #expected, _expected_value, #actual, _actual_value); \
