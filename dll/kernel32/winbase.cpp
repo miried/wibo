@@ -15,6 +15,7 @@
 #include <cassert>
 #include <cerrno>
 #include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -359,6 +360,222 @@ ActivationContext *currentActivationContext() {
 	return g_builtinActCtx.get();
 }
 
+constexpr DWORD FORMAT_MESSAGE_ALLOCATE_BUFFER = 0x00000100;
+constexpr DWORD FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200;
+constexpr DWORD FORMAT_MESSAGE_FROM_STRING = 0x00000400;
+constexpr DWORD FORMAT_MESSAGE_FROM_HMODULE = 0x00000800;
+constexpr DWORD FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000;
+constexpr DWORD FORMAT_MESSAGE_ARGUMENT_ARRAY = 0x00002000;
+constexpr DWORD FORMAT_MESSAGE_MAX_WIDTH_MASK = 0x000000FF;
+
+enum class FormatMessageStatus { kOk, kInvalidParameter };
+
+// Lazily-resolved view over the caller's insert arguments. Both FORMAT_MESSAGE_ARGUMENT_ARRAY and the
+// va_list form reduce to a contiguous array of 32-bit guest values indexed by (insert - 1).
+struct FormatMessageArgs {
+	const void *raw = nullptr;
+	bool argumentArray = false;
+	const uint32_t *values = nullptr;
+	bool resolved = false;
+	int last = 0;
+	bool available() const { return raw != nullptr; }
+};
+
+uint32_t formatMessageGetArg(int nr, FormatMessageArgs &args) {
+	if (nr == -1) {
+		nr = args.last + 1;
+	}
+	if (!args.resolved) {
+		if (args.argumentArray) {
+			args.values = reinterpret_cast<const uint32_t *>(args.raw);
+		} else {
+			args.values = fromGuestPtr<const uint32_t>(*reinterpret_cast<const GUEST_PTR *>(args.raw));
+		}
+		args.resolved = true;
+	}
+	if (nr > args.last) {
+		args.last = nr;
+	}
+	return args.values[nr - 1];
+}
+
+bool formatMessageIsDigit(char c) { return c >= '0' && c <= '9'; }
+
+void formatMessageAppend(std::string &out, const std::string &spec, const char *strArg) {
+	int needed = std::snprintf(nullptr, 0, spec.c_str(), strArg);
+	if (needed < 0) {
+		return;
+	}
+	std::vector<char> buf(static_cast<size_t>(needed) + 1);
+	std::snprintf(buf.data(), buf.size(), spec.c_str(), strArg);
+	out.append(buf.data(), static_cast<size_t>(needed));
+}
+
+void formatMessageAppend(std::string &out, const std::string &spec, unsigned int intArg) {
+	int needed = std::snprintf(nullptr, 0, spec.c_str(), intArg);
+	if (needed < 0) {
+		return;
+	}
+	std::vector<char> buf(static_cast<size_t>(needed) + 1);
+	std::snprintf(buf.data(), buf.size(), spec.c_str(), intArg);
+	out.append(buf.data(), static_cast<size_t>(needed));
+}
+
+// Handles a single "%n" / "%n!fmt!" insertion, appending the result to out. Returns the position in
+// format immediately after the (optional) "!fmt!" block. Mirrors wine's format_insert() so that
+// FORMAT_MESSAGE_FROM_STRING output matches real Windows.
+const char *formatMessageInsert(int insert, const char *format, FormatMessageArgs &args, std::string &out) {
+	if (*format != '!') {
+		uint32_t arg = formatMessageGetArg(insert, args);
+		out += arg ? fromGuestPtr<const char>(arg) : "(null)";
+		return format;
+	}
+
+	++format; // opening '!'
+	std::string spec = "%";
+	while (*format == '-' || *format == '+' || *format == ' ' || *format == '#' || *format == '0' || *format == '*') {
+		if (*format == '*') {
+			spec += std::to_string(formatMessageGetArg(insert, args));
+			insert = -1;
+			++format;
+		} else {
+			spec += *format++;
+		}
+	}
+	while (formatMessageIsDigit(*format)) {
+		spec += *format++;
+	}
+	if (*format == '.') {
+		spec += *format++;
+		if (*format == '*') {
+			spec += std::to_string(formatMessageGetArg(insert, args));
+			insert = -1;
+			++format;
+		} else {
+			while (formatMessageIsDigit(*format)) {
+				spec += *format++;
+			}
+		}
+	}
+
+	uint32_t arg = formatMessageGetArg(insert, args);
+
+	// FormatMessageA is always ANSI: narrow wide (S/ls/ws) conversions and keep the rest.
+	bool wideString = false;
+	if (format[0] == 's' || (format[0] == 'h' && (format[1] == 's' || format[1] == 'S'))) {
+		spec += 's';
+	} else if (format[0] == 'S' || ((format[0] == 'l' || format[0] == 'w') && (format[1] == 's' || format[1] == 'S'))) {
+		spec += 's';
+		wideString = true;
+	} else if (format[0] == 'c' || (format[0] == 'h' && (format[1] == 'c' || format[1] == 'C')) || format[0] == 'C' ||
+			   ((format[0] == 'l' || format[0] == 'w') && (format[1] == 'c' || format[1] == 'C'))) {
+		spec += 'c';
+	} else {
+		// Integer conversion. Drop length modifiers and only allow a safe integer specifier so a caller
+		// cannot smuggle in %n (memory write) or width-mismatched (%p, %ld) conversions via the message.
+		while (*format == 'l' || *format == 'h' || *format == 'w' || *format == 'I' || formatMessageIsDigit(*format)) {
+			++format;
+		}
+		char conv = *format;
+		if (conv == 'd' || conv == 'i' || conv == 'u' || conv == 'o' || conv == 'x' || conv == 'X') {
+			spec += conv;
+		} else {
+			spec += 'd';
+		}
+	}
+
+	while (*format && *format != '!') {
+		++format;
+	}
+	if (*format == '!') {
+		++format;
+	}
+
+	char conversion = spec.back();
+	if (conversion == 's') {
+		if (wideString) {
+			std::string narrow = arg ? wideStringToString(fromGuestPtr<const uint16_t>(arg)) : std::string("(null)");
+			formatMessageAppend(out, spec, narrow.c_str());
+		} else {
+			formatMessageAppend(out, spec, arg ? fromGuestPtr<const char>(arg) : "(null)");
+		}
+	} else if (conversion == 'c') {
+		formatMessageAppend(out, spec, static_cast<unsigned int>(arg & 0xFF));
+	} else {
+		formatMessageAppend(out, spec, static_cast<unsigned int>(arg));
+	}
+	return format;
+}
+
+// Expands a message body into out. Returns kInvalidParameter for the cases where real Windows fails
+// (a lone trailing '%', or a numbered insert without an argument source).
+FormatMessageStatus formatMessageExpand(DWORD flags, const char *src, FormatMessageArgs &args, std::string &out) {
+	const bool useWidth = (flags & FORMAT_MESSAGE_MAX_WIDTH_MASK) != 0;
+	const bool ignoreInserts = (flags & FORMAT_MESSAGE_IGNORE_INSERTS) != 0;
+	const char *f = src;
+	bool eos = false;
+	while (*f && !eos) {
+		if (*f != '%') {
+			char ch = *f++;
+			if (ch == '\r' || ch == '\n') {
+				if (ch == '\r' && *f == '\n') {
+					++f;
+				}
+				if (useWidth) {
+					out.push_back(' ');
+				} else {
+					out.push_back('\r');
+					out.push_back('\n');
+				}
+			} else {
+				out.push_back(ch);
+			}
+			continue;
+		}
+
+		++f; // '%'
+		char c = *f;
+		if (c >= '1' && c <= '9') {
+			if (ignoreInserts) {
+				out.push_back('%');
+				out.push_back(*f++);
+				continue;
+			}
+			if (!args.available()) {
+				return FormatMessageStatus::kInvalidParameter;
+			}
+			int insertnr = c - '0';
+			++f;
+			if (formatMessageIsDigit(*f)) {
+				insertnr = insertnr * 10 + (*f - '0');
+				++f;
+			}
+			f = formatMessageInsert(insertnr, f, args, out);
+		} else if (c == 'n') {
+			out.push_back('\r');
+			out.push_back('\n');
+			++f;
+		} else if (c == 'r') {
+			out.push_back('\r');
+			++f;
+		} else if (c == 't') {
+			out.push_back('\t');
+			++f;
+		} else if (c == '0') {
+			eos = true;
+			++f;
+		} else if (c == '\0') {
+			return FormatMessageStatus::kInvalidParameter;
+		} else {
+			if (ignoreInserts) {
+				out.push_back('%');
+			}
+			out.push_back(*f++);
+		}
+	}
+	return FormatMessageStatus::kOk;
+}
+
 } // namespace
 
 void ensureDefaultActivationContext() {
@@ -591,48 +808,72 @@ UINT WINAPI SetHandleCount(UINT uNumber) {
 }
 
 DWORD WINAPI FormatMessageA(DWORD dwFlags, LPCVOID lpSource, DWORD dwMessageId, DWORD dwLanguageId, LPSTR lpBuffer,
-							DWORD nSize, va_list *Arguments) {
+							DWORD nSize, void *Arguments) {
 	HOST_CONTEXT_GUARD();
-	DEBUG_LOG("FormatMessageA(%u, %p, %u, %u, %p, %u, %p)\n", dwFlags, lpSource, dwMessageId, dwLanguageId, lpBuffer,
+	DEBUG_LOG("FormatMessageA(0x%x, %p, %u, %u, %p, %u, %p)\n", dwFlags, lpSource, dwMessageId, dwLanguageId, lpBuffer,
 			  nSize, Arguments);
 
-	if (dwFlags & 0x00000100) {
-		// FORMAT_MESSAGE_ALLOCATE_BUFFER
-	} else if (dwFlags & 0x00002000) {
-		// FORMAT_MESSAGE_ARGUMENT_ARRAY
-	} else if (dwFlags & 0x00000800) {
-		// FORMAT_MESSAGE_FROM_HMODULE
-	} else if (dwFlags & 0x00000400) {
-		// FORMAT_MESSAGE_FROM_STRING
-	} else if (dwFlags & 0x00001000) {
-		// FORMAT_MESSAGE_FROM_SYSTEM
-		std::string message = std::system_category().message(static_cast<int>(dwMessageId));
-		size_t length = message.length();
-		if (!lpBuffer || nSize == 0) {
-			setLastError(ERROR_INSUFFICIENT_BUFFER);
+	if (dwFlags & FORMAT_MESSAGE_ALLOCATE_BUFFER) {
+		if (!lpBuffer) {
+			setLastError(ERROR_NOT_ENOUGH_MEMORY);
 			return 0;
 		}
-		std::strncpy(lpBuffer, message.c_str(), static_cast<size_t>(nSize));
-		if (static_cast<size_t>(nSize) <= length) {
-			if (static_cast<size_t>(nSize) > 0) {
-				lpBuffer[nSize - 1] = '\0';
-			}
-			setLastError(ERROR_INSUFFICIENT_BUFFER);
-			return 0;
-		}
-		lpBuffer[length] = '\0';
-		return static_cast<DWORD>(length);
-	} else if (dwFlags & 0x00000200) {
-		// FORMAT_MESSAGE_IGNORE_INSERTS
-	} else {
-		// unhandled?
+		*reinterpret_cast<GUEST_PTR *>(lpBuffer) = GUEST_NULL;
 	}
 
-	if (lpBuffer && nSize > 0) {
-		lpBuffer[0] = '\0';
+	std::string source;
+	if (dwFlags & FORMAT_MESSAGE_FROM_STRING) {
+		if (!lpSource) {
+			setLastError(ERROR_INVALID_PARAMETER);
+			return 0;
+		}
+		source.assign(reinterpret_cast<const char *>(lpSource));
+	} else if (dwFlags & (FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_FROM_HMODULE)) {
+		// wibo has no message-table resources; fall back to the host's system error text.
+		source = std::system_category().message(static_cast<int>(dwMessageId));
+	} else {
+		setLastError(ERROR_INVALID_PARAMETER);
+		return 0;
 	}
-	setLastError(ERROR_CALL_NOT_IMPLEMENTED);
-	return 0;
+
+	FormatMessageArgs args;
+	args.raw = Arguments;
+	args.argumentArray = (dwFlags & FORMAT_MESSAGE_ARGUMENT_ARRAY) != 0;
+
+	std::string formatted;
+	if (formatMessageExpand(dwFlags, source.c_str(), args, formatted) != FormatMessageStatus::kOk) {
+		setLastError(ERROR_INVALID_PARAMETER);
+		return 0;
+	}
+
+	if (formatted.empty()) {
+		// e.g. a message consisting solely of a "%0" terminator; leave the caller's buffer untouched.
+		DEBUG_LOG("FormatMessageA -> 0 (empty)\n");
+		return 0;
+	}
+
+	const size_t length = formatted.size();
+	const size_t required = length + 1;
+	if (dwFlags & FORMAT_MESSAGE_ALLOCATE_BUFFER) {
+		size_t allocSize = std::max(static_cast<size_t>(nSize), required);
+		void *buffer = wibo::heap::guestMalloc(allocSize, /*zero=*/true);
+		if (!buffer) {
+			setLastError(ERROR_NOT_ENOUGH_MEMORY);
+			return 0;
+		}
+		std::memcpy(buffer, formatted.data(), length);
+		*reinterpret_cast<GUEST_PTR *>(lpBuffer) = toGuestPtr(buffer);
+	} else {
+		if (required > static_cast<size_t>(nSize)) {
+			setLastError(ERROR_INSUFFICIENT_BUFFER);
+			return 0;
+		}
+		std::memcpy(lpBuffer, formatted.data(), length);
+		lpBuffer[length] = '\0';
+	}
+
+	DEBUG_LOG("FormatMessageA -> %zu\n", length);
+	return static_cast<DWORD>(length);
 }
 
 PVOID WINAPI EncodePointer(PVOID Ptr) {
