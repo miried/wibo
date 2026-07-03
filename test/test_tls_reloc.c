@@ -52,6 +52,27 @@ static DWORD WINAPI tls_worker_proc(LPVOID param) {
 	return 0;
 }
 
+typedef struct {
+	tls_module_index_fn indexFn;
+	void *observedPointer;
+	DWORD observedIndex;
+} LateWorkerCtx;
+
+// Runs on a thread created AFTER the module is already loaded. Such a thread
+// joins the loader's TLS bookkeeping once the module TLS capacity is already
+// established, so it exercises a different (and deterministic) code path than the
+// pre-existing worker above. It must still observe a valid module TLS pointer
+// (fs:0x2C).
+static DWORD WINAPI tls_late_worker_proc(LPVOID param) {
+	LateWorkerCtx *ctx = (LateWorkerCtx *)param;
+	TEST_CHECK(ctx != NULL);
+	TEST_CHECK(ctx->indexFn != NULL);
+	ctx->observedIndex = ctx->indexFn();
+	ctx->observedPointer = module_tls_array();
+	TEST_CHECK(ctx->observedPointer != NULL);
+	return 0;
+}
+
 static void *reserve_preferred_region(size_t size) {
 	void *preferred = (void *)(uintptr_t)TLS_RELOC_PREFERRED_BASE;
 	void *reservation = VirtualAlloc(preferred, size, MEM_RESERVE, PAGE_NOACCESS);
@@ -127,6 +148,21 @@ int main(void) {
 
 	int hits = tls_callback_hits();
 	TEST_CHECK_EQ(1, hits);
+
+	// Regression: a thread created *after* the module has been loaded must also
+	// observe a valid module TLS pointer. A thread that joins the loader's TLS
+	// bookkeeping after the module TLS capacity has been established previously
+	// received no module TLS array at all, leaving fs:0x2C NULL. For pre-existing
+	// threads (the worker above) this is scheduling dependent and only fails
+	// intermittently; creating the thread after the load reproduces it every time.
+	LateWorkerCtx lateCtx = {0};
+	lateCtx.indexFn = tls_module_index;
+	HANDLE lateThread = CreateThread(NULL, 0, tls_late_worker_proc, &lateCtx, 0, NULL);
+	TEST_CHECK(lateThread != NULL);
+	TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(lateThread, 1000));
+	TEST_CHECK(lateCtx.observedPointer != NULL);
+	TEST_CHECK_EQ(moduleIndex, lateCtx.observedIndex);
+	TEST_CHECK(CloseHandle(lateThread));
 
 	TEST_CHECK(FreeLibrary(mod));
 	TEST_CHECK(CloseHandle(workerThread));
