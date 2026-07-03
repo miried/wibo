@@ -54,8 +54,13 @@ static DWORD WINAPI tls_worker_proc(LPVOID param) {
 
 typedef struct {
 	tls_module_index_fn indexFn;
+	tls_template_address_fn templateFn;
+	tls_get_template_value_fn valueFn;
+	void *observedArray;
 	void *observedPointer;
 	DWORD observedIndex;
+	intptr_t pointerOffset;
+	int observedValue;
 } LateWorkerCtx;
 
 // Runs on a thread created AFTER the module is already loaded. Such a thread
@@ -67,9 +72,18 @@ static DWORD WINAPI tls_late_worker_proc(LPVOID param) {
 	LateWorkerCtx *ctx = (LateWorkerCtx *)param;
 	TEST_CHECK(ctx != NULL);
 	TEST_CHECK(ctx->indexFn != NULL);
+	TEST_CHECK(ctx->templateFn != NULL);
 	ctx->observedIndex = ctx->indexFn();
-	ctx->observedPointer = module_tls_array();
-	TEST_CHECK(ctx->observedPointer != NULL);
+	void **tlsArray = module_tls_array();
+	ctx->observedArray = tlsArray;
+	TEST_CHECK(tlsArray != NULL);
+	void *threadSlot = tlsArray[ctx->observedIndex];
+	ctx->observedPointer = threadSlot;
+	TEST_CHECK(threadSlot != NULL);
+	void *expectedPtr = ctx->templateFn();
+	TEST_CHECK(expectedPtr != NULL);
+	ctx->pointerOffset = (intptr_t)((uint8_t *)expectedPtr - (uint8_t *)threadSlot);
+	ctx->observedValue = ctx->valueFn ? ctx->valueFn() : *(int *)expectedPtr;
 	return 0;
 }
 
@@ -150,18 +164,23 @@ int main(void) {
 	TEST_CHECK_EQ(1, hits);
 
 	// Regression: a thread created *after* the module has been loaded must also
-	// observe a valid module TLS pointer. A thread that joins the loader's TLS
-	// bookkeeping after the module TLS capacity has been established previously
-	// received no module TLS array at all, leaving fs:0x2C NULL. For pre-existing
-	// threads (the worker above) this is scheduling dependent and only fails
-	// intermittently; creating the thread after the load reproduces it every time.
+	// observe a valid module TLS array and a populated slot for this module. A
+	// thread that joins the loader's TLS bookkeeping after module TLS capacity has
+	// already been established used to receive no module TLS array at all, leaving
+	// fs:0x2C NULL. A partial fix can still leave the module slot itself NULL.
 	LateWorkerCtx lateCtx = {0};
 	lateCtx.indexFn = tls_module_index;
+	lateCtx.templateFn = tls_template_address;
+	lateCtx.valueFn = tls_get_template_value;
 	HANDLE lateThread = CreateThread(NULL, 0, tls_late_worker_proc, &lateCtx, 0, NULL);
 	TEST_CHECK(lateThread != NULL);
 	TEST_CHECK_EQ(WAIT_OBJECT_0, WaitForSingleObject(lateThread, 1000));
+	TEST_CHECK(lateCtx.observedArray != NULL);
 	TEST_CHECK(lateCtx.observedPointer != NULL);
+	TEST_CHECK(lateCtx.observedPointer != mainThreadSlot);
 	TEST_CHECK_EQ(moduleIndex, lateCtx.observedIndex);
+	TEST_CHECK_EQ(offset, lateCtx.pointerOffset);
+	TEST_CHECK_EQ((unsigned int)initial, (unsigned int)lateCtx.observedValue);
 	TEST_CHECK(CloseHandle(lateThread));
 
 	TEST_CHECK(FreeLibrary(mod));
