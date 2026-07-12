@@ -1762,7 +1762,7 @@ UINT WINAPI GetTempFileNameA(LPCSTR lpPathName, LPCSTR lpPrefixString, UINT uUni
 
 	auto makeTempFileName = [&](UINT unique) {
 		char filename[12];
-		snprintf(filename, sizeof(filename), "%.3s%04X.TMP", prefix, unique & 0xFFFF);
+		snprintf(filename, sizeof(filename), "%.3s%04x.tmp", prefix, unique & 0xFFFF);
 
 		std::string path = lpPathName;
 		if (!path.empty() && path.back() != '\\' && path.back() != '/') {

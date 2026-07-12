@@ -24,7 +24,7 @@ static void expect_fixed_unique_name(const char *temp_path) {
 
 	result = GetTempFileNameA(temp_path, "wboX", 0x12345, temp_file);
 	TEST_CHECK_EQ(0x2345, result);
-	TEST_CHECK_STR_EQ("wbo2345.TMP", basename_of(temp_file));
+	TEST_CHECK_STR_EQ("wbo2345.tmp", basename_of(temp_file));
 	TEST_CHECK_EQ(INVALID_FILE_ATTRIBUTES, GetFileAttributesA(temp_file));
 }
 
@@ -35,7 +35,7 @@ static void expect_created_file_reopens_like_link(const char *temp_path) {
 	TEST_CHECK(result != 0);
 	TEST_CHECK_EQ(11, strlen(basename_of(temp_file)));
 	TEST_CHECK_EQ(0, strncmp("GDI", basename_of(temp_file), 3));
-	TEST_CHECK_STR_EQ(".TMP", basename_of(temp_file) + 7);
+	TEST_CHECK_STR_EQ(".tmp", basename_of(temp_file) + 7);
 	TEST_CHECK(GetFileAttributesA(temp_file) != INVALID_FILE_ATTRIBUTES);
 
 	HANDLE handle = CreateFileA(temp_file, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
@@ -50,7 +50,7 @@ static void expect_null_prefix_is_empty(const char *temp_path) {
 
 	UINT result = GetTempFileNameA(temp_path, NULL, 0x12345, temp_file);
 	TEST_CHECK_EQ(0x2345, result);
-	TEST_CHECK_STR_EQ("2345.TMP", basename_of(temp_file));
+	TEST_CHECK_STR_EQ("2345.tmp", basename_of(temp_file));
 }
 
 static void expect_fixed_unique_name_w(const WCHAR *temp_path) {
@@ -62,7 +62,7 @@ static void expect_fixed_unique_name_w(const WCHAR *temp_path) {
 
 	result = GetTempFileNameW(temp_path, L"wboX", 0x12345, temp_file);
 	TEST_CHECK_EQ(0x2345, result);
-	TEST_CHECK(wcscmp(L"wbo2345.TMP", basename_of_w(temp_file)) == 0);
+	TEST_CHECK(wcscmp(L"wbo2345.tmp", basename_of_w(temp_file)) == 0);
 	TEST_CHECK_EQ(INVALID_FILE_ATTRIBUTES, GetFileAttributesW(temp_file));
 }
 
@@ -73,7 +73,7 @@ static void expect_created_file_reopens_like_link_w(const WCHAR *temp_path) {
 	TEST_CHECK(result != 0);
 	TEST_CHECK_EQ(11, wcslen(basename_of_w(temp_file)));
 	TEST_CHECK_EQ(0, wcsncmp(L"GDI", basename_of_w(temp_file), 3));
-	TEST_CHECK(wcscmp(L".TMP", basename_of_w(temp_file) + 7) == 0);
+	TEST_CHECK(wcscmp(L".tmp", basename_of_w(temp_file) + 7) == 0);
 	TEST_CHECK(GetFileAttributesW(temp_file) != INVALID_FILE_ATTRIBUTES);
 
 	HANDLE handle = CreateFileW(temp_file, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
@@ -88,7 +88,7 @@ static void expect_null_prefix_is_empty_w(const WCHAR *temp_path) {
 
 	UINT result = GetTempFileNameW(temp_path, NULL, 0x12345, temp_file);
 	TEST_CHECK_EQ(0x2345, result);
-	TEST_CHECK(wcscmp(L"2345.TMP", basename_of_w(temp_file)) == 0);
+	TEST_CHECK(wcscmp(L"2345.tmp", basename_of_w(temp_file)) == 0);
 }
 
 static void expect_invalid_parameters_w(const WCHAR *temp_path) {
