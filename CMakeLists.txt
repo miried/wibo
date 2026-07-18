@@ -52,7 +52,7 @@ endif()
 
 option(WIBO_ENABLE_FIXTURE_TESTS "Enable Win32 fixture tests (requires i686-w64-mingw32)" ON)
 option(WIBO_ENABLE_LIBURING "Enable liburing for asynchronous I/O" OFF)
-option(WIBO_ENABLE_WINE_DLLS "Download Wine CRT DLLs from encounter/winedll by default" ON)
+option(WIBO_ENABLE_WINE_DLLS "Download Wine CRT DLLs from miried/winedll by default" ON)
 set(WIBO_ENABLE_LTO "AUTO" CACHE STRING "Enable link-time optimization (LTO)")
 set_property(CACHE WIBO_ENABLE_LTO PROPERTY STRINGS "AUTO" "ON" "OFF")
 
@@ -140,7 +140,7 @@ if (WIBO_ENABLE_LIBURING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(liburing PRIVATE ${liburing_SOURCE_DIR})
 endif()
 
-set(WIBO_WINEDLL_RELEASE_TAG "2026-07-10")
+set(WIBO_WINEDLL_RELEASE_TAG "2026-07-18")
 
 function(configure_wine_dll VAR FILENAME SHA256)
     if (NOT DEFINED ${VAR})
@@ -148,7 +148,7 @@ function(configure_wine_dll VAR FILENAME SHA256)
             file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/vendor)
             set(${VAR} ${CMAKE_CURRENT_BINARY_DIR}/vendor/${FILENAME})
             file(DOWNLOAD
-                https://github.com/encounter/winedll/releases/download/${WIBO_WINEDLL_RELEASE_TAG}/${FILENAME}
+                https://github.com/miried/winedll/releases/download/${WIBO_WINEDLL_RELEASE_TAG}/${FILENAME}
                 ${${VAR}}
                 EXPECTED_HASH SHA256=${SHA256}
             )
@@ -159,15 +159,16 @@ function(configure_wine_dll VAR FILENAME SHA256)
     set(${VAR} "${${VAR}}" PARENT_SCOPE)
 endfunction()
 
-configure_wine_dll(MSVCRT_DLL msvcrt.dll 01f5b5a6f8b249e2842e74720376ca84ea6e8094c18b5416ec80a2183fc9ef81)
-configure_wine_dll(MSVCIRT_DLL msvcirt.dll c170ef5e15c91cafe520e4342a42eef8f8ed2c007e20471b0ac1c0277e1e0333)
-configure_wine_dll(MSVCRT20_DLL msvcrt20.dll fb94edfa05414460ea8f27b82acf205a0d3caccd68d66f7e7de8ae7d29ae4563)
-configure_wine_dll(MSVCRT40_DLL msvcrt40.dll da49673adf20b5f8cf23e99b18278f3ea225d33ce47bd25e1455c654ff4fc5ec)
-configure_wine_dll(MSVCR71_DLL msvcr71.dll ad5b9673604a205f24feb06283c93fdbd7b652fbe9c865c50dbf26505b3df463)
-configure_wine_dll(MSVCR90_DLL msvcr90.dll c8682ba683665bd3d6b9ff8ee0b34af34edbcfd30e7682321b98941aefeae659)
-configure_wine_dll(MSVCR100_DLL msvcr100.dll 405e44bced50a4b57c08de47e16e7d9792603c0af52bdd0fb19cff2c858b5880)
-configure_wine_dll(MSVCR120_DLL msvcr120.dll fdb166b3eadd663fda65718334b72736a6f4aa3ec94a32d4c47e7a7add75b696)
-configure_wine_dll(UCRTBASE_DLL ucrtbase.dll 9606bcdd8d8436ce4d5c995cada5c20ce3d6cb52c35a04a0366613950785c282)
+configure_wine_dll(CRTDLL_DLL crtdll.dll 0f0b19b75aedb200066cb36bf267dd7e4305419d277a200bc68acc9b803b434e)
+configure_wine_dll(MSVCRT_DLL msvcrt.dll a8d647d2f0ba58a578105bbf434d3038bd7e291cb78c076d0630c8c0c6b5bc14)
+configure_wine_dll(MSVCIRT_DLL msvcirt.dll 3a2f89cf15d15c30d669d918223387a564acae9b8d4609c84e1ecd4e2e3ea528)
+configure_wine_dll(MSVCRT20_DLL msvcrt20.dll 3ee8146220a9e04cd9e7f8d8c09574f3e7ea576b018bcd40bc6d5c840857e09d)
+configure_wine_dll(MSVCRT40_DLL msvcrt40.dll 899d92bdaf3eb9de970a50159159ed665142a908736f4b824107c24b2ccdc85e)
+configure_wine_dll(MSVCR71_DLL msvcr71.dll 22e1e7b39b9bf8c92c958827f028e3a767f073cf3e40fef025ba223bd145b5dd)
+configure_wine_dll(MSVCR90_DLL msvcr90.dll d08f1dd939cd8f8254f58aad314c9407529075e6201f6ca73090cc41971da464)
+configure_wine_dll(MSVCR100_DLL msvcr100.dll 6b72bd64a952f46d89bc5762baa6e808de5ac5afaefde7170a42f24495cd9d70)
+configure_wine_dll(MSVCR120_DLL msvcr120.dll 36fec72989280fdb5f32c1387a6f25b0327651f840c4d09e3df1e33424329cb3)
+configure_wine_dll(UCRTBASE_DLL ucrtbase.dll db361ca575b7564868aae7cdbe08e0ab67c32a42112092318c067d70f9b3d3fc)
 
 function(embed_binary SRC FILE)
     set_source_files_properties(${SRC} PROPERTIES
@@ -244,6 +245,7 @@ add_executable(wibo
     src/strutil.cpp
     src/tls.cpp
 )
+add_embedded_wine_dll(wibo dll/crtdll.cpp WIBO_HAS_CRTDLL "${CRTDLL_DLL}")
 add_embedded_wine_dll(wibo dll/msvcrt.cpp WIBO_HAS_MSVCRT "${MSVCRT_DLL}")
 add_embedded_wine_dll(wibo dll/msvcirt.cpp WIBO_HAS_MSVCIRT "${MSVCIRT_DLL}")
 add_embedded_wine_dll(wibo dll/msvcrt20.cpp WIBO_HAS_MSVCRT20 "${MSVCRT20_DLL}")
